@@ -1,4 +1,31 @@
-# Python virtual environment
+# ── Python ────────────────────────────────────────────────────────────────────
 venv/
+.venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ── Environment variables (NEVER commit API keys) ─────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+.streamlit/secrets.toml
+
+# ── Temp result files (our refresh-safety backup files) ───────────────────────
+/tmp/learning_path_results/
+
+# ── OS files ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDEs ──────────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
