@@ -18,7 +18,11 @@ build/
 # ── Streamlit ─────────────────────────────────────────────────────────────────
 .streamlit/secrets.toml
 
-# ── Temp result files (our refresh-safety backup files) ───────────────────────
+# ── MCP server local environment ──────────────────────────────────────────────
+mcp_server/.venv/
+mcp_server/__pycache__/
+
+# ── Temp result files ─────────────────────────────────────────────────────────
 /tmp/learning_path_results/
 
 # ── OS files ──────────────────────────────────────────────────────────────────
