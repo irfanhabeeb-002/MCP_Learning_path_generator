@@ -1,71 +1,135 @@
 # Learning Path Generator with Model Context Protocol (MCP)
 
-This project is a Streamlit-based web application that generates personalized learning paths using the Model Context Protocol (MCP). It integrates with various services including YouTube, Google Drive, and Notion to create comprehensive learning experiences.
+A Streamlit application that generates personalized, day-wise learning paths using a **LangGraph ReAct agent**, **Gemini 2.5 Flash**, and a **custom FastMCP server** for curated YouTube resources.
 
-### 🔗 Live App:
+Repository: [github.com/irfanhabeeb-002/MCP_Learning_path_generator](https://github.com/irfanhabeeb-002/MCP_Learning_path_generator)
+
+### Live demo
+
 ```
- https://mcp-learningpath-generator.streamlit.app
+https://mcp-learningpath-generator.streamlit.app
 ```
+
 ## Features
 
-- 🎯 Generate personalized learning paths based on your goals
-- 🎥 Integration with YouTube for video content
-- 📁 Google Drive integration for document storage
-- 📝 Notion integration for note-taking and organization
-- 🚀 Real-time progress tracking
-- 🎨 User-friendly Streamlit interface
+- Generate personalized, day-wise learning paths from a natural-language goal
+- Curated YouTube video recommendations via a custom MCP server
+- LangGraph ReAct agent with Gemini 2.5 Flash orchestration
+- Server-side tool call limits to control API usage
+- Real-time progress tracking in Streamlit
+- Environment-based configuration (no API keys in the UI)
+
+## Architecture
+
+```
+Streamlit (app.py)
+    └── LangGraph ReAct Agent (utils.py)
+            ├── Gemini 2.5 Flash
+            └── MultiServerMCPClient
+                    └── Custom FastMCP Server (mcp_server/)
+                            ├── find_learning_resources
+                            └── search_youtube
+                                    └── YouTube Data API v3
+```
 
 ## Prerequisites
 
 - Python 3.10+
-- Google ai Studio API Key
-- Pipedream URLs for integrations (YouTube and either Drive or Notion)
+- [Google AI Studio API key](https://aistudio.google.com/) (Gemini)
+- [YouTube Data API v3 key](https://console.cloud.google.com/) (video search)
 
 ## Installation
 
 1. Clone the repository:
 
+```bash
+git clone https://github.com/irfanhabeeb-002/MCP_Learning_path_generator.git
+cd MCP_Learning_path_generator
+```
+
 2. Create and activate a virtual environment:
 
-3. Install the required packages:
+```bash
+python3.11 -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
+4. Install MCP server dependencies:
+
+```bash
+pip install -r mcp_server/requirements.txt
+```
+
 ## Configuration
 
-Before running the application, you'll need to set up:
+Copy the example environment file and add your keys:
 
-1. Google API Key
-2. Pipedream URLs for:
-   - YouTube (required)
-   - Google Drive or Notion (based on your preference)
+```bash
+cp .env.example .env
+```
 
-## Running the Application
+Required variables in `.env`:
 
-To start the application, run:
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_API_KEY` | Google AI Studio key for Gemini |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key |
+| `MCP_SERVER_URL` | MCP endpoint (default: `http://127.0.0.1:8001/mcp`) |
+
+## Running locally
+
+**Terminal 1 — start the MCP server:**
+
+```bash
+cd mcp_server
+python server.py
+```
+
+**Terminal 2 — start Streamlit:**
+
 ```bash
 streamlit run app.py
 ```
 
-The application will be available at `http://localhost:8501` by default.
-
-### 🌐 Try the Live Demo
-Use the app without installing anything!
-```
-👉 https://mcp-learningpath-generator.streamlit.app
-```
+Open `http://localhost:8501`, enter a learning goal, and click **Generate Learning Path**.
 
 ## Usage
 
-1. Enter your Google ai studio API key and Pipedream URLs in the sidebar
-2. Select your preferred secondary tool (Drive or Notion)
-3. Enter your learning goal (e.g., "I want to learn python basics in 3 days")
-4. Click "Generate Learning Path" to create your personalized learning plan
+1. Enter a learning goal (e.g. *"I want to learn Python basics in 5 days"*)
+2. Click **Generate Learning Path**
+3. Review the day-wise plan with recommended YouTube videos
 
-## Project Structure
+No API keys or URLs are entered in the UI — configuration is loaded from `.env`.
 
-- `app.py` - Main Streamlit application
-- `utils.py` - Utility functions and helper methods
-- `prompt.py` - Prompt template
-- `requirements.txt` - Project dependencies
+## Project structure
+
+```
+MCP_Learning_path_generator/
+├── app.py                 # Streamlit frontend
+├── utils.py               # Agent orchestration, MCP client, response extraction
+├── prompt.py              # Agent system prompt
+├── requirements.txt       # App dependencies
+├── .env.example           # Environment variable template
+└── mcp_server/
+    ├── server.py          # FastMCP HTTP server entrypoint
+    ├── tools.py           # search_youtube, find_learning_resources
+    ├── tool_limits.py     # Per-run tool call limits
+    └── requirements.txt   # MCP server dependencies
+```
+
+## MCP tools
+
+| Tool | Limit per run | Description |
+|------|---------------|-------------|
+| `find_learning_resources` | 1 | Broad discovery with categorized YouTube results + Wikipedia links |
+| `search_youtube` | 3 | Targeted search for a specific topic or day |
+
+## License
+
+MIT (or your preferred license — update as needed)
