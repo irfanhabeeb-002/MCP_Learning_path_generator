@@ -1,5 +1,7 @@
-langchain
-langgraph
-langchain-mcp-adapters
-langchain-google-genai
-streamlit
+# Streamlit app + LangGraph agent
+langchain>=0.3.0
+langgraph>=0.2.0
+langchain-mcp-adapters>=0.1.0
+langchain-google-genai>=2.0.0
+streamlit>=1.32.0
+python-dotenv>=1.0.0,<2.0.0
