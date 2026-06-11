@@ -103,10 +103,10 @@ The agent never invents video URLs. Tools return **structured JSON**; the model 
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    STREAMLIT APP  (app.py)                            │
-│   • Progress bar (Setup → Integration → Generation)                   │
-│   • Markdown-only result rendering                                    │
-│   • No credentials in UI — loads .env via utils                       │
+│                    STREAMLIT APP  (app.py)                              │
+│   • Progress bar (Setup → Integration → Generation)                     │
+│   • Markdown-only result rendering                                      │
+│   • No credentials in UI — loads .env via utils                         │
 └─────────────────────────────────┬───────────────────────────────────────┘
                                   │
                                   ▼
@@ -120,7 +120,7 @@ The agent never invents video URLs. Tools return **structured JSON**; the model 
                 ▼                                     ▼
 ┌───────────────────────────┐       ┌───────────────────────────────────┐
 │   GEMINI 2.5 FLASH        │       │   MultiServerMCPClient            │
-│   Google AI Studio        │       │   transport: streamable_http        │
+│   Google AI Studio        │       │   transport: streamable_http      │
 │   Planning + synthesis    │       │   url: MCP_SERVER_URL             │
 └───────────────────────────┘       └─────────────────┬─────────────────┘
                                                       │
@@ -128,11 +128,11 @@ The agent never invents video URLs. Tools return **structured JSON**; the model 
                                     ┌───────────────────────────────────┐
                                     │   FASTMCP SERVER  (mcp_server/)   │
                                     │   Streamable HTTP @ /mcp          │
-                                    │   ┌─────────────────────────────┐   │
-                                    │   │ find_learning_resources     │   │
-                                    │   │ search_youtube              │   │
-                                    │   │ tool_limits.py (enforced)   │   │
-                                    │   └─────────────────────────────┘   │
+                                    │  ┌─────────────────────────────┐  │
+                                    │  │ find_learning_resources     │  │
+                                    │  │ search_youtube              │  │
+                                    │  │ tool_limits.py (enforced)   │  │
+                                    │  └─────────────────────────────┘  │
                                     └─────────────────┬─────────────────┘
                                                       │
                               ┌───────────────────────┼───────────────────────┐
