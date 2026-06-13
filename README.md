@@ -357,9 +357,10 @@ Edit `.env` with your keys. **Never commit `.env` to version control.**
 | `YOUTUBE_API_KEY` | Yes | — | YouTube Data API v3 key (used by MCP server) |
 | `MCP_SERVER_URL` | No | `http://127.0.0.1:8001/mcp` | MCP server endpoint for the agent |
 | `MCP_HOST` | No | `127.0.0.1` | MCP server bind host |
-| `MCP_PORT` | No | `8000` | MCP server bind port |
+| `MCP_PORT` | No | `8001` | MCP server bind port |
 | `YOUTUBE_MAX_RESULTS` | No | `10` | Max videos per YouTube search (1–50) |
 | `LOG_LEVEL` | No | `INFO` | MCP server log level |
+| `AGENT_TIMEOUT_SECONDS` | No | `300` | Max wall-clock seconds for one agent run |
 
 ---
 
@@ -534,7 +535,8 @@ MCP is particularly valuable for **agentic AI** systems where the set of capabil
 ## Technical Highlights
 
 - **LangGraph `create_react_agent`** with `recursion_limit=25` — enough for ~4 tool rounds without runaway loops
-- **`extract_final_learning_path()`** — Reverse-walks message history; returns only the last AI markdown
+- **`asyncio.wait_for` timeout** — `AGENT_TIMEOUT_SECONDS` (default 300s) caps wall-clock agent time and prevents silent quota burn
+- **`extract_final_learning_path()`** — Reverse-walks message history; skips tool JSON and tool-call-only steps
 - **`ConfigurationError`** — Fails fast when `.env` is incomplete; no silent partial setup
 - **Per-run UUID correlation** — `X-Agent-Run-Id` header links agent session to MCP rate limits
 - **Thread-safe in-memory limiter** — 30-minute TTL on run counters; suitable for single-instance deploys
