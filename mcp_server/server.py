@@ -11,7 +11,7 @@ Run locally:
     export YOUTUBE_API_KEY="your-key"
     python server.py
 
-MCP endpoint (default): http://127.0.0.1:8000/mcp
+MCP endpoint (default): http://127.0.0.1:8001/mcp
 """
 
 from __future__ import annotations
@@ -78,7 +78,8 @@ def _env_int(name: str, default: int) -> int:
 if __name__ == "__main__":
     # Step 3: Read network settings from the environment (production-friendly).
     host = os.getenv("MCP_HOST", "127.0.0.1")
-    port = _env_int("MCP_PORT", 8000)
+    # Default 8001 — must match utils.DEFAULT_MCP_SERVER_URL and .env.example
+    port = _env_int("MCP_PORT", 8001)
     path = os.getenv("MCP_PATH", "/mcp")
 
     logger.info(
