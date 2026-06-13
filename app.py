@@ -1,10 +1,17 @@
 import streamlit as st
 
-from utils import ConfigurationError, run_agent_sync
+from utils import AgentTimeoutError, ConfigurationError, run_agent_sync
 
-st.set_page_config(page_title="MCP POC", page_icon="🤖", layout="wide")
+st.set_page_config(
+    page_title="AI Learning Path Generator | Personalized Roadmaps with MCP",
+    page_icon="🚀",
+    layout="wide"
+)
 
-st.title("Model Context Protocol(MCP) - Learning Path Generator")
+st.title("AI Learning Path Generator")
+st.caption(
+    "Generate personalized learning roadmaps using LangGraph agents, Gemini 2.5 Flash, and MCP-powered resource discovery."
+)
 
 # Initialize session state for progress
 if "current_step" not in st.session_state:
@@ -112,6 +119,9 @@ if st.button("Generate Learning Path", type="primary", disabled=st.session_state
                 st.error("No results were generated. Please try again.")
                 st.session_state.is_generating = False
         except ConfigurationError as e:
+            st.error(str(e))
+            st.session_state.is_generating = False
+        except AgentTimeoutError as e:
             st.error(str(e))
             st.session_state.is_generating = False
         except Exception as e:

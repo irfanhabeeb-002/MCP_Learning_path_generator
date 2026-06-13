@@ -11,6 +11,10 @@ class ConfigurationError(Exception):
     """Raised when required environment variables are missing."""
 
 
+class AgentTimeoutError(Exception):
+    """Raised when agent execution exceeds the configured time limit."""
+
+
 try:
     from dotenv import load_dotenv
 
@@ -34,7 +38,26 @@ DEFAULT_MCP_SERVER_URL = "http://127.0.0.1:8001/mcp"
 # 25 provides headroom without allowing runaway tool loops (old value: 100).
 RECURSION_LIMIT = 25
 
+# Hard ceiling on wall-clock agent time — prevents silent quota burn on hung runs.
+DEFAULT_AGENT_TIMEOUT_SECONDS = 300
+
 AGENT_CONFIG = RunnableConfig(recursion_limit=RECURSION_LIMIT)
+
+# Keys that identify MCP tool JSON payloads (not final markdown).
+_TOOL_JSON_MARKERS = frozenset({"success", "tool", "videos", "video_resources", "featured_videos"})
+
+
+def _agent_timeout_seconds() -> int:
+    raw = os.getenv("AGENT_TIMEOUT_SECONDS", str(DEFAULT_AGENT_TIMEOUT_SECONDS))
+    try:
+        timeout = int(raw)
+    except ValueError as exc:
+        raise ConfigurationError(
+            f"AGENT_TIMEOUT_SECONDS must be an integer (got {raw!r})."
+        ) from exc
+    if timeout < 1:
+        raise ConfigurationError("AGENT_TIMEOUT_SECONDS must be at least 1.")
+    return timeout
 
 
 def _require_env(name: str) -> str:
@@ -81,6 +104,33 @@ def _message_text(message: AIMessage) -> str:
     return ""
 
 
+def _looks_like_tool_json(text: str) -> bool:
+    """
+    Return True when text parses as a structured MCP tool payload.
+
+    Avoids treating arbitrary JSON-like markdown as intermediate ReAct noise.
+    """
+    if not text.startswith("{") or not text.endswith("}"):
+        return False
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return bool(_TOOL_JSON_MARKERS.intersection(payload.keys()))
+
+
+def _is_intermediate_ai_message(message: AIMessage, text: str) -> bool:
+    """Skip ReAct steps that only relay tool calls or raw tool JSON."""
+    tool_calls = getattr(message, "tool_calls", None) or []
+    if tool_calls and not text:
+        return True
+    if _looks_like_tool_json(text):
+        return True
+    return False
+
+
 def _sanitize_learning_path_markdown(text: str) -> str:
     """Normalize the final model output for Streamlit markdown rendering."""
     text = text.strip()
@@ -102,7 +152,7 @@ def extract_final_learning_path(agent_state: dict) -> str:
     Return only the final AI-authored learning path from the LangGraph state.
 
     Skips human messages, tool messages, and intermediate AI messages that only
-    contain tool calls (which may include raw MCP JSON).
+    contain tool calls or structured MCP JSON payloads.
     """
     messages = agent_state.get("messages", [])
     if not messages:
@@ -113,16 +163,8 @@ def extract_final_learning_path(agent_state: dict) -> str:
             continue
 
         text = _message_text(message)
-        if not text:
+        if not text or _is_intermediate_ai_message(message, text):
             continue
-
-        # Skip intermediate ReAct steps that are purely JSON tool payloads.
-        if text.startswith("{") and text.endswith("}"):
-            try:
-                json.loads(text)
-                continue
-            except json.JSONDecodeError:
-                pass
 
         return _sanitize_learning_path_markdown(text)
 
@@ -143,6 +185,9 @@ async def setup_agent_with_tools(
         if progress_callback:
             progress_callback("Connecting to learning resources...")
 
+        # langchain-mcp-adapters >= 0.1.0: MultiServerMCPClient is NOT an async context
+        # manager. get_tools() is the supported stateless pattern — each tool invocation
+        # opens its own MCP session and cleans up afterward.
         mcp_client = MultiServerMCPClient(tools_config)
 
         if progress_callback:
@@ -166,39 +211,64 @@ async def setup_agent_with_tools(
         raise
 
 
+async def _run_agent_async(
+    user_goal: str,
+    progress_callback: Optional[Callable[[str], None]] = None,
+) -> str:
+    """Async agent pipeline: setup → invoke (with timeout) → extract markdown."""
+    agent_run_id = str(uuid.uuid4())
+    timeout = _agent_timeout_seconds()
+
+    agent = await setup_agent_with_tools(
+        agent_run_id=agent_run_id,
+        progress_callback=progress_callback,
+    )
+
+    learning_path_prompt = f"User Goal: {user_goal}\n{user_goal_prompt}"
+
+    if progress_callback:
+        progress_callback("Researching videos and building your plan...")
+
+    agent_state = await asyncio.wait_for(
+        agent.ainvoke(
+            {"messages": [HumanMessage(content=learning_path_prompt)]},
+            config=AGENT_CONFIG,
+        ),
+        timeout=timeout,
+    )
+
+    if progress_callback:
+        progress_callback("Finalizing your learning path...")
+
+    return extract_final_learning_path(agent_state)
+
+
 def run_agent_sync(
     user_goal: str = "",
     progress_callback: Optional[Callable[[str], None]] = None,
 ) -> str:
     """
     Run the agent synchronously and return only the final learning-path markdown.
+
+    Uses a dedicated event loop for Streamlit's synchronous execution model.
+    Wall-clock time is capped by AGENT_TIMEOUT_SECONDS (default 300s) via
+    asyncio.wait_for to prevent runaway token burn on hung agent loops.
+
+    Note: This call blocks the Streamlit thread for the duration of the run.
+    Progress callbacks may update placeholders mid-run, but the UI cannot be
+    cancelled interactively until the timeout fires.
     """
-    agent_run_id = str(uuid.uuid4())
-
-    async def _run() -> str:
-        agent = await setup_agent_with_tools(
-            agent_run_id=agent_run_id,
-            progress_callback=progress_callback,
-        )
-
-        learning_path_prompt = f"User Goal: {user_goal}\n{user_goal_prompt}"
-
-        if progress_callback:
-            progress_callback("Researching videos and building your plan...")
-
-        agent_state = await agent.ainvoke(
-            {"messages": [HumanMessage(content=learning_path_prompt)]},
-            config=AGENT_CONFIG,
-        )
-
-        if progress_callback:
-            progress_callback("Finalizing your learning path...")
-
-        return extract_final_learning_path(agent_state)
-
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        return loop.run_until_complete(_run())
+        return loop.run_until_complete(
+            _run_agent_async(user_goal, progress_callback)
+        )
+    except asyncio.TimeoutError as exc:
+        timeout = _agent_timeout_seconds()
+        raise AgentTimeoutError(
+            f"Learning path generation timed out after {timeout} seconds. "
+            "Try a shorter or simpler goal, then retry."
+        ) from exc
     finally:
         loop.close()
