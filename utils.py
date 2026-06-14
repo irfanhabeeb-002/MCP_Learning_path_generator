@@ -30,7 +30,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
 
-from prompt import user_goal_prompt
+from prompt import SYSTEM_PROMPT
 
 DEFAULT_MCP_SERVER_URL = "http://127.0.0.1:8001/mcp"
 
@@ -198,7 +198,7 @@ async def setup_agent_with_tools(
         if progress_callback:
             progress_callback("Starting AI assistant...")
 
-        agent = create_react_agent(initialize_model(), tools)
+        agent = create_react_agent(initialize_model(), tools, prompt=SYSTEM_PROMPT)
 
         if progress_callback:
             progress_callback("Ready to build your plan...")
@@ -224,7 +224,9 @@ async def _run_agent_async(
         progress_callback=progress_callback,
     )
 
-    learning_path_prompt = f"User Goal: {user_goal}\n{user_goal_prompt}"
+    # The system prompt is injected via create_react_agent(prompt=SYSTEM_PROMPT).
+    # The human message carries only the user's goal — no system text appended.
+    learning_path_prompt = f"User Goal: {user_goal}"
 
     if progress_callback:
         progress_callback("Researching videos and building your plan...")

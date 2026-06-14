@@ -7,6 +7,22 @@ orchestrator. Limits are enforced in-process (per server instance).
 Limits:
   - find_learning_resources: 1 call per run
   - search_youtube:          3 calls per run
+
+Header normalisation note:
+  FastMCP's get_http_headers() stores ALL header names in lowercase before
+  returning them. The constant AGENT_RUN_ID_HEADER must therefore be lowercase.
+  The include= set passed to get_http_headers is also lowercased internally, so
+  only the lowercase form needs to be provided.
+
+Multi-user / deployment warning:
+  When the X-Agent-Run-Id header is absent (e.g. a direct curl request, a
+  misconfigured client, or any non-Streamlit caller) all such requests fall into
+  the shared 'anonymous' bucket. User A's tool calls count against User B's
+  limit for the same 30-minute TTL window.
+
+  This is acceptable for a localhost single-user demo. For a public or
+  multi-user deployment add authentication (e.g. API key validation) and
+  ensure every client sends a unique X-Agent-Run-Id per generation run.
 """
 
 from __future__ import annotations
@@ -17,6 +33,8 @@ from typing import Final
 
 from fastmcp.server.dependencies import get_http_headers
 
+# FastMCP normalises all header names to lowercase before returning them.
+# This constant MUST be lowercase — a mixed-case form would never match.
 AGENT_RUN_ID_HEADER: Final[str] = "x-agent-run-id"
 
 TOOL_LIMITS: Final[dict[str, int]] = {
@@ -87,15 +105,16 @@ def get_agent_run_id() -> str:
     """
     Read the agent run ID from the inbound HTTP request.
 
-    Falls back to 'anonymous' when the header is missing (still rate-limited as
-    one shared bucket — acceptable for local/dev single-user usage).
+    FastMCP normalises all header names to lowercase, so only the lowercase
+    constant is included and looked up. The mixed-case form "X-Agent-Run-Id"
+    would never appear as a dict key and must not be used here.
+
+    Falls back to 'anonymous' when the header is absent — still rate-limited
+    as one shared bucket (see module docstring for multi-user implications).
     """
-    headers = get_http_headers(include={AGENT_RUN_ID_HEADER, "X-Agent-Run-Id"})
-    return (
-        headers.get(AGENT_RUN_ID_HEADER)
-        or headers.get("X-Agent-Run-Id")
-        or "anonymous"
-    )
+    # include= accepts any case; FastMCP lowercases internally before filtering.
+    headers = get_http_headers(include={AGENT_RUN_ID_HEADER})
+    return headers.get(AGENT_RUN_ID_HEADER) or "anonymous"
 
 
 def enforce_tool_limit(tool_name: str) -> tuple[bool, str | None]:

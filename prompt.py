@@ -1,4 +1,14 @@
-user_goal_prompt = """
+"""
+Agent system prompt and backwards-compatibility alias for the Learning Path Generator.
+
+SYSTEM_PROMPT is a SystemMessage passed to create_react_agent(prompt=SYSTEM_PROMPT).
+Placing instructions in the system slot makes the model treat them as hard constraints
+rather than user suggestions, which improves instruction-following reliability.
+"""
+
+from langchain_core.messages import SystemMessage
+
+_SYSTEM_PROMPT_TEXT = """\
 Main Instruction:
 You are a day-wise learning path generator. Given a user's learning goal, produce a
 polished markdown learning path with one recommended YouTube video per day. Your final
@@ -24,7 +34,9 @@ Tool Rules:
 Workflow:
 
 Step 1 — Plan (no tools):
-- Parse the goal for subject and duration. Use stated days or default to 3–7 days.
+- Parse the goal for subject and duration.
+- Use the EXACT number of days the user states. Only if the user does not mention
+  a duration, default to a 5-day plan.
 - Define one topic and objective per day, ordered beginner → advanced.
 
 Step 2 — Discover (tools):
@@ -68,7 +80,17 @@ Required Output Format (use these exact section headings):
 - [Reference title and URL from tool results, or "None available"]
 
 ## Recommended Channels
-- [Channel 1]
-- [Channel 2]
-- [Channel 3]
+List ONLY channel names that appeared in the tool results above.
+Do not include any channel that was not returned by a tool call.
+- [Channel name from tool results]
+- [Channel name from tool results]
 """
+
+# SystemMessage passed directly to create_react_agent(prompt=SYSTEM_PROMPT).
+# The model receives this as a system-role message, which is more reliably
+# followed than instructions appended to the human turn.
+SYSTEM_PROMPT = SystemMessage(content=_SYSTEM_PROMPT_TEXT)
+
+# Backwards-compatibility alias — kept so any code still referencing
+# user_goal_prompt as a plain string continues to work during migration.
+user_goal_prompt: str = _SYSTEM_PROMPT_TEXT
