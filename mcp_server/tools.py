@@ -3,6 +3,32 @@ MCP tool implementations for the Learning Path Generator.
 
 Tools call external APIs (YouTube Data API, Wikipedia REST API) and always return
 structured JSON dicts so LangGraph / Gemini agents can parse results reliably.
+
+# ---------------------------------------------------------------------------
+# YouTube Data API v3 — quota budget
+# ---------------------------------------------------------------------------
+# Every search.list call costs 100 quota units (Google's fixed price).
+#
+#   find_learning_resources : 3 search.list calls × 100 units = 300 units
+#   search_youtube (max 3)  : 3 search.list calls × 100 units = 300 units
+#   ─────────────────────────────────────────────────────────────────────
+#   Worst case per run       :                               600 units
+#   Free tier daily budget   :                            10,000 units
+#   Max full runs/day        :                              ~16 runs
+#
+# For a portfolio demo this is fine. For production, add a response cache
+# (e.g. Redis or functools.lru_cache keyed on the sanitized query string)
+# to reduce quota spend and latency.
+#
+# ---------------------------------------------------------------------------
+# Wikipedia REST API — latency note
+# ---------------------------------------------------------------------------
+# _fetch_wikipedia_summary uses a synchronous httpx.Client, which blocks the
+# MCP server's request thread for the duration of the network call. The
+# timeout is set to 5 seconds — enough for Wikipedia under normal conditions
+# and short enough to avoid stalling the tool for too long on a slow network.
+# If Wikipedia is unreachable the function returns None gracefully and the
+# tool continues without reference links.
 """
 
 from __future__ import annotations
@@ -50,6 +76,37 @@ LEARNING_RESOURCE_SEARCH_ANGLES: Final[list[tuple[str, str]]] = [
     ("tutorials", "{topic} full course tutorial"),
     ("deep_dives", "{topic} advanced explained"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Module-level singletons
+# ---------------------------------------------------------------------------
+# Issue 1 fix: YouTube client singleton.
+#
+# google-api-python-client's build() fetches the API discovery document from
+# Google's servers on every call (cache_discovery=False means no local disk
+# cache). Building the client once per process eliminates that per-call
+# network round-trip. find_learning_resources makes 3 YouTube searches; with
+# the old pattern each of those triggered a fresh discovery fetch. The
+# singleton means the document is fetched exactly once for the process lifetime.
+#
+# The api-key is stored alongside the client so that a key rotation (unlikely
+# without a server restart, but defensive) triggers a rebuild.
+_youtube_client = None  # type: ignore[assignment]
+_youtube_client_api_key: str = ""
+
+# Issue 2 fix: reusable httpx.Client for Wikipedia requests.
+#
+# Creating an httpx.Client opens a connection pool; destroying it closes all
+# connections. Reusing a single client allows TCP keep-alive to work across
+# calls and avoids repeated pool setup/teardown overhead.
+# httpx's connection pool is thread-safe for concurrent .get() calls, which
+# is the only operation we perform. We never call .close(), so there is no
+# risk of using a closed client from a concurrent thread.
+_http_client = httpx.Client(
+    timeout=5.0,  # 5 s is ample for Wikipedia; avoids a 10-s thread stall
+    headers={"User-Agent": "LearningPathGenerator-MCP/1.0"},
+)
 
 
 # ---------------------------------------------------------------------------
@@ -108,19 +165,35 @@ def _get_max_results() -> int:
     return value
 
 
-def _build_youtube_client():
+def _get_youtube_client():
     """
-    Create a YouTube Data API v3 client.
+    Return the module-level YouTube Data API v3 client, building it once.
 
-    Uses google-api-python-client's discovery builder; credentials are API-key only
-    (no OAuth) which is appropriate for public search operations.
+    Calling google-api-python-client's build() fetches the API discovery
+    document every time (cache_discovery=False). By reusing a single client
+    object for the process lifetime we pay that network cost only once,
+    regardless of how many tool calls are made during a generation run.
+
+    The client is rebuilt if the API key changes (defensive — normally the
+    key is fixed for the lifetime of the server process).
     """
-    return build(
-        "youtube",
-        "v3",
-        developerKey=_get_youtube_api_key(),
-        cache_discovery=False,
-    )
+    global _youtube_client, _youtube_client_api_key
+    api_key = _get_youtube_api_key()
+    if _youtube_client is None or api_key != _youtube_client_api_key:
+        logger.debug("Building YouTube API client (first use or key rotation).")
+        _youtube_client = build(
+            "youtube",
+            "v3",
+            developerKey=api_key,
+            cache_discovery=False,
+        )
+        _youtube_client_api_key = api_key
+    return _youtube_client
+
+
+def _build_youtube_client():
+    """Thin alias kept for backwards compatibility. Use _get_youtube_client()."""
+    return _get_youtube_client()
 
 
 def _format_video_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -166,7 +239,7 @@ def _youtube_search(
     - optional videoCategoryId=27 (Education)
     """
     max_results = max_results or _get_max_results()
-    youtube = _build_youtube_client()
+    youtube = _get_youtube_client()  # singleton — no per-call discovery fetch
 
     # Base request parameters shared across searches
     request_kwargs: dict[str, Any] = {
@@ -224,11 +297,9 @@ def _fetch_wikipedia_summary(topic: str) -> dict[str, Any] | None:
     url = WIKIPEDIA_SUMMARY_URL.format(title=title_for_url)
 
     try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(
-                url,
-                headers={"User-Agent": "LearningPathGenerator-MCP/1.0"},
-            )
+        # Use the module-level httpx singleton (connection pool reuse, no per-call
+        # setup/teardown). The 5-second timeout is set on the singleton itself.
+        response = _http_client.get(url)
         if response.status_code == 404:
             return None
         response.raise_for_status()
