@@ -114,7 +114,7 @@ if st.button(
     "Generate Learning Path",
     type="primary",
     disabled=st.session_state.is_generating,
-    id="generate_btn",
+    key="generate_btn",
 ):
     if not user_goal:
         st.warning("Please enter your learning goal.")
