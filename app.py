@@ -1,3 +1,5 @@
+import os
+
 import streamlit as st
 
 from utils import AgentTimeoutError, ConfigurationError, run_agent_sync
@@ -22,6 +24,8 @@ if "last_section" not in st.session_state:
     st.session_state.last_section = ""
 if "is_generating" not in st.session_state:
     st.session_state.is_generating = False
+if "pending_goal" not in st.session_state:
+    st.session_state.pending_goal = ""
 
 # Quick guide before goal input
 st.info("""
@@ -49,7 +53,7 @@ def update_progress(message: str):
     """Update progress in the Streamlit UI"""
     st.session_state.current_step = message
 
-    # Map backend progress messages to the original section/progress flow
+    # Map backend progress messages to the section/progress flow
     if "Preparing your learning path" in message or "Setting up agent" in message:
         section = "Setup"
         st.session_state.progress = 0.1
@@ -72,6 +76,9 @@ def update_progress(message: str):
     else:
         section = st.session_state.last_section or "Progress"
 
+    # BUG 1 FIX: capture the previous section BEFORE overwriting it so the
+    # comparison below is meaningful (previously it was always False).
+    prev_section = st.session_state.last_section
     st.session_state.last_section = section
 
     # Show progress bar
@@ -79,8 +86,8 @@ def update_progress(message: str):
 
     # Update progress container with current status
     with progress_container:
-        # Show section header if it changed
-        if section != st.session_state.last_section and section != "Complete":
+        # Show section header only when the section actually changes
+        if section != prev_section and section != "Complete":
             st.write(f"**{section}**")
 
         # Show message with tick for completed steps
@@ -91,43 +98,82 @@ def update_progress(message: str):
             st.write(f"{prefix} {message}")
 
 
-# Generate Learning Path button
-if st.button("Generate Learning Path", type="primary", disabled=st.session_state.is_generating):
+# ---------------------------------------------------------------------------
+# BUG 2 FIX: double-trigger guard using st.rerun()
+#
+# Problem: setting is_generating = True inside the button block does NOT
+# disable the button for the current script run — Streamlit only re-renders
+# after the run completes, which is after the 300-s blocking call returns.
+#
+# Solution: stash the goal in pending_goal, flip is_generating, then call
+# st.rerun() immediately. The rerun renders the disabled button BEFORE the
+# blocking agent call starts. The generation block below picks up the stashed
+# goal on that same rerun.
+# ---------------------------------------------------------------------------
+if st.button(
+    "Generate Learning Path",
+    type="primary",
+    disabled=st.session_state.is_generating,
+    id="generate_btn",
+):
     if not user_goal:
         st.warning("Please enter your learning goal.")
-    else:
-        try:
-            st.session_state.is_generating = True
+    elif not st.session_state.is_generating:  # guard against re-entry
+        # Reset progress state
+        st.session_state.current_step = ""
+        st.session_state.progress = 0
+        st.session_state.last_section = ""
+        # Stash the goal so it survives the rerun boundary
+        st.session_state.pending_goal = user_goal
+        st.session_state.is_generating = True
+        # Force a re-render — button is now disabled in the new run
+        st.rerun()
 
-            # Reset progress
-            st.session_state.current_step = ""
-            st.session_state.progress = 0
-            st.session_state.last_section = ""
+# ---------------------------------------------------------------------------
+# BUG 3 FIX: timeout / cancel notice
+#
+# While the agent is running we show how long the user may need to wait and
+# acknowledge that there is no interactive cancel (the backend timeout fires
+# automatically via asyncio.wait_for / AGENT_TIMEOUT_SECONDS).
+# ---------------------------------------------------------------------------
+if st.session_state.is_generating:
+    timeout_seconds = int(os.getenv("AGENT_TIMEOUT_SECONDS", "300"))
+    st.info(
+        f"⏳ Generation in progress — this may take up to **{timeout_seconds} seconds**. "
+        "The request will be cancelled automatically if it exceeds this limit. "
+        "Please do not click the button again."
+    )
 
-            learning_path = run_agent_sync(
-                user_goal=user_goal,
-                progress_callback=update_progress,
-            )
+# ---------------------------------------------------------------------------
+# Generation block — runs on the rerun triggered above.
+# pending_goal is cleared immediately to prevent repeat execution.
+# ---------------------------------------------------------------------------
+if st.session_state.is_generating and st.session_state.pending_goal:
+    goal = st.session_state.pending_goal
+    st.session_state.pending_goal = ""  # consume the stashed goal
+    try:
+        learning_path = run_agent_sync(
+            user_goal=goal,
+            progress_callback=update_progress,
+        )
 
-            update_progress("Learning path generation complete!")
+        update_progress("Learning path generation complete!")
 
-            # Display results
-            st.header("Your Learning Path")
-            if learning_path:
-                st.markdown(learning_path)
-            else:
-                st.error("No results were generated. Please try again.")
-                st.session_state.is_generating = False
-        except ConfigurationError as e:
-            st.error(str(e))
-            st.session_state.is_generating = False
-        except AgentTimeoutError as e:
-            st.error(str(e))
-            st.session_state.is_generating = False
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
-            st.error(
-                "Please try again. If the problem persists, ensure the learning "
-                "resource service is available."
-            )
-            st.session_state.is_generating = False
+        # Display results
+        st.header("Your Learning Path")
+        if learning_path:
+            st.markdown(learning_path)
+        else:
+            st.error("No results were generated. Please try again.")
+    except ConfigurationError as e:
+        st.error(str(e))
+    except AgentTimeoutError as e:
+        st.error(str(e))
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+        st.error(
+            "Please try again. If the problem persists, ensure the learning "
+            "resource service is available."
+        )
+    finally:
+        st.session_state.is_generating = False
