@@ -1,9 +1,22 @@
 # Learning Path Generator — custom MCP server
-# Python 3.10+ required (FastMCP 3.x)
-# Pinned with ~= (compatible release) to the versions verified working on 2026-06-14.
-# ~=X.Y allows patch updates (X.Y.Z) but blocks minor/major version changes.
-fastmcp~=3.3
-google-api-python-client~=2.197
-google-auth~=2.53
-httpx~=0.28
-python-dotenv~=1.2
+# Python 3.11+ required (FastMCP 3.x uses modern asyncio features).
+#
+# Pinning strategy: ~=X.Y.Z (three-component compatible release, per PEP 440).
+#
+#   ~=X.Y.Z  is equivalent to  >= X.Y.Z, == X.Y.*
+#   → allows patch-level updates (security fixes, bug fixes)
+#   → blocks minor and major version bumps
+#
+# Note: google-auth is a transitive dependency of google-api-python-client.
+# It is pinned explicitly here because it is also pulled by other Google
+# packages, and an explicit pin prevents pip from resolving a version that
+# breaks the OAuth token refresh flow.
+#
+# Versions verified working: 2026-06-15
+# Run `pip freeze` in mcp_server/.venv to see the full transitive tree.
+
+fastmcp~=3.3.1
+google-api-python-client~=2.197.0
+google-auth~=2.53.0
+httpx~=0.28.1
+python-dotenv~=1.2.2

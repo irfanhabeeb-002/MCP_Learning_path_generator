@@ -2,14 +2,14 @@
 
 # AI Learning Path Generator
 
-### An agentic AI application that uses **LangGraph**, **Gemini 2.5 Flash**, and a **custom FastMCP server** to create personalized learning roadmaps with curated educational resources.
+### An agentic AI system that turns a natural-language learning goal into a structured, day-wise study plan — backed by real YouTube videos discovered through a custom MCP server.
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-Frontend-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-ReAct%20Agent-1C3C3C)](https://langchain-ai.github.io/langgraph/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.58-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.2-1C3C3C)](https://langchain-ai.github.io/langgraph/)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-4285F4?logo=google&logoColor=white)](https://aistudio.google.com/)
+[![FastMCP](https://img.shields.io/badge/FastMCP-3.3-0EA5E9)](https://gofastmcp.com/)
 [![MCP](https://img.shields.io/badge/Model%20Context%20Protocol-MCP-6366F1)](https://modelcontextprotocol.io/)
-[![FastMCP](https://img.shields.io/badge/FastMCP-Custom%20Server-0EA5E9)](https://gofastmcp.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **[Live Demo](https://mcp-learningpath-generator.streamlit.app/)** · **[Repository](https://github.com/irfanhabeeb-002/MCP_Learning_path_generator)** · **[Report Bug](https://github.com/irfanhabeeb-002/MCP_Learning_path_generator/issues)**
@@ -62,38 +62,46 @@ The agent never invents video URLs. Tools return **structured JSON**; the model 
 - **Personalized learning roadmaps** — Day-wise topics, objectives, and one recommended video per day
 - **LangGraph ReAct agent** — Tool-augmented reasoning with controlled recursion (`recursion_limit=25`)
 - **Gemini 2.5 Flash orchestration** — Fast, cost-effective planning and synthesis
+- **System-prompt injection** — Agent instructions passed via `create_react_agent(prompt=SystemMessage(...))` for reliable instruction-following
 - **Custom FastMCP server** — Self-hosted MCP tools over **Streamable HTTP** transport
-- **YouTube Data API integration** — Education-biased search with structured video metadata
-- **Broad resource discovery** — `find_learning_resources` aggregates multi-angle searches + Wikipedia summaries
+- **YouTube Data API integration** — Education-biased search (category 27) with structured video metadata
+- **Broad resource discovery** — `find_learning_resources` aggregates 3 angled searches + Wikipedia summaries
 - **Tool call limiting** — Enforced server-side: 1 × `find_learning_resources`, 3 × `search_youtube` per run
+- **Per-run UUID correlation** — `X-Agent-Run-Id` header links agent session to MCP rate limits
 - **Clean response pipeline** — Extracts only the final AI markdown; no tool JSON in the UI
+- **Double-trigger guard** — `st.rerun()` pattern ensures the generate button is disabled before the blocking agent call starts
+- **Timeout + progress feedback** — UI shows countdown and auto-cancels via `asyncio.wait_for`
 - **Environment-based configuration** — `GOOGLE_API_KEY`, `YOUTUBE_API_KEY`, `MCP_SERVER_URL` via `.env`
-- **Real-time progress tracking** — Setup → Integration → Generation flow in Streamlit
 
 ---
 
-## Screenshots
+## User Interface & Screenshots
 
-> Add screenshots to `docs/images/` and reference them here for the live portfolio presentation.
+Here is the step-by-step visual workflow of the **AI Learning Path Generator**:
 
-| Home | Learning Path Output |
-|------|----------------------|
-| _Streamlit goal input and progress bar_ | _Rendered markdown learning path with video links_ |
+### 1. Home — Goal Input (Empty State)
+The initial landing page displays the welcome header, quick usage guidelines, an empty text input field, and the generation button.
+<p align="center">
+  <img src="docs/images/home.png" alt="1. Empty Goal Input State" width="90%" style="border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);" />
+</p>
 
-```markdown
-<!-- Example once images are added:
-![Home Screen](docs/images/home.png)
-![Learning Path](docs/images/output.png)
--->
-```
+### 2. Goal Entered — Ready to Generate
+Once you enter a learning goal (e.g., *"I want to learn Python basics in 3 days"*), the form registers the input and readies the application for generation.
+<p align="center">
+  <img src="docs/images/home_with_goal.png" alt="2. Goal Entered State" width="90%" style="border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);" />
+</p>
 
-**[Try the live demo →](https://mcp-learningpath-generator.streamlit.app/)**
+### 3. Learning Path Generated — Result
+After processing, the screen displays the structured day-by-day roadmap containing custom objectives and clickable, curated YouTube resource video links.
+<p align="center">
+  <img src="docs/images/home_with_result.png" alt="3. Generated Learning Path Results" width="90%" style="border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" />
+</p>
 
 ---
 
 ## Architecture Diagram
 
-### High-level system view (ASCII)
+### High-level system view
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -104,16 +112,18 @@ The agent never invents video URLs. Tools return **structured JSON**; the model 
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    STREAMLIT APP  (app.py)                              │
+│   • st.rerun() double-trigger guard                                     │
 │   • Progress bar (Setup → Integration → Generation)                     │
 │   • Markdown-only result rendering                                      │
-│   • No credentials in UI — loads .env via utils                         │
+│   • No credentials in UI — loads .env via python-dotenv                 │
 └─────────────────────────────────┬───────────────────────────────────────┘
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                 LANGGRAPH REACT AGENT  (utils.py)                       │
-│   • create_react_agent(Gemini 2.5 Flash, MCP tools)                     │
-│   • extract_final_learning_path() — strips tool messages / JSON         │
+│   • create_react_agent(Gemini 2.5 Flash, MCP tools, prompt=SystemMsg)  │
+│   • asyncio.wait_for() — AGENT_TIMEOUT_SECONDS hard ceiling             │
+│   • extract_final_learning_path() — strips tool messages / JSON        │
 │   • X-Agent-Run-Id header for per-run tool budgets                      │
 └───────────────┬─────────────────────────────────────┬───────────────────┘
                 │                                     │
@@ -128,6 +138,8 @@ The agent never invents video URLs. Tools return **structured JSON**; the model 
                                     ┌───────────────────────────────────┐
                                     │   FASTMCP SERVER  (mcp_server/)   │
                                     │   Streamable HTTP @ /mcp          │
+                                    │   YouTube client singleton        │
+                                    │   httpx client singleton          │
                                     │  ┌─────────────────────────────┐  │
                                     │  │ find_learning_resources     │  │
                                     │  │ search_youtube              │  │
@@ -135,10 +147,10 @@ The agent never invents video URLs. Tools return **structured JSON**; the model 
                                     │  └─────────────────────────────┘  │
                                     └─────────────────┬─────────────────┘
                                                       │
-                              ┌───────────────────────┼───────────────────────┐
-                              ▼                       ▼                       ▼
-                    YouTube Data API v3        Wikipedia REST API         Structured JSON
-                    (video search)             (reference links)          tool responses
+                              ┌───────────────────────┼───────────────────┐
+                              ▼                       ▼                   ▼
+                    YouTube Data API v3        Wikipedia REST API   Structured JSON
+                    (video search)             (reference links)    tool responses
 ```
 
 ### Component diagram (Mermaid)
@@ -152,7 +164,7 @@ flowchart TB
     subgraph Orchestration["Agent Layer"]
         Agent["LangGraph ReAct Agent<br/>utils.py"]
         LLM["Gemini 2.5 Flash<br/>ChatGoogleGenerativeAI"]
-        Prompt["System Prompt<br/>prompt.py"]
+        Prompt["System Prompt<br/>prompt.py → SystemMessage"]
     end
 
     subgraph MCP["MCP Layer"]
@@ -221,7 +233,7 @@ The LangGraph app connects via `langchain-mcp-adapters` using `transport: "strea
 }
 ```
 
-The `X-Agent-Run-Id` header ties tool invocations to a single learning-path generation run, enabling **server-side rate limiting**.
+The `X-Agent-Run-Id` header ties tool invocations to a single learning-path generation run, enabling **server-side rate limiting**. FastMCP normalises all header names to lowercase internally — the server reads `x-agent-run-id`.
 
 ---
 
@@ -239,11 +251,12 @@ sequenceDiagram
     participant Y as YouTube API
 
     U->>S: Enter learning goal
+    S->>S: st.rerun() — disable button before blocking call
     S->>A: run_agent_sync(goal)
-    A->>G: Plan day-wise structure
+    A->>G: Plan day-wise structure (system prompt)
     G->>A: Internal plan
     A->>M: find_learning_resources(topic)
-    M->>Y: Multi-angle searches
+    M->>Y: Multi-angle searches (3×)
     Y-->>M: Video metadata (JSON)
     M-->>A: Structured JSON response
     opt Gap filling (≤3 calls)
@@ -258,30 +271,33 @@ sequenceDiagram
     S->>U: Render markdown only
 ```
 
-### Prompt-driven steps (agent instructions)
+### Prompt-driven steps
 
-1. **Plan** — Derive days, topics, and objectives from the user goal
-2. **Discover** — Call `find_learning_resources`, then `search_youtube` only if needed
-3. **Select** — Choose one video per day from tool results (no invented URLs)
-4. **Format** — Emit standardized markdown sections (Goal, Duration, Day N, Further Reading)
-5. **Deliver** — Return the learning path as the final message only
+1. **Plan** — Derive exact day count and topics from the user goal; default to 5 days if unstated
+2. **Discover** — Call `find_learning_resources` once, then `search_youtube` only if needed
+3. **Select** — Choose one video per day from tool results (no invented URLs; no hallucinated channels)
+4. **Format** — Emit standardized markdown: Goal, Duration, Day N, Further Reading, Recommended Channels
+5. **Deliver** — Return only the markdown learning path as the final message
 
 ---
 
 ## Technology Stack
 
-| Category | Technology | Role |
-|----------|------------|------|
-| **Frontend** | [Streamlit](https://streamlit.io/) | Web UI, progress, markdown rendering |
-| **Agent framework** | [LangGraph](https://langchain-ai.github.io/langgraph/) | ReAct agent graph (`create_react_agent`) |
-| **LLM** | [Gemini 2.5 Flash](https://aistudio.google.com/) | Reasoning and content generation |
-| **LLM SDK** | `langchain-google-genai` | Gemini integration |
-| **MCP client** | `langchain-mcp-adapters` | `MultiServerMCPClient` |
-| **MCP server** | [FastMCP](https://gofastmcp.com/) | Tool registration, Streamable HTTP |
-| **Video data** | YouTube Data API v3 | Authoritative search and metadata |
-| **Reference data** | Wikipedia REST API | Supplemental reading links |
-| **Config** | `python-dotenv` | Environment variable loading |
-| **Language** | Python 3.10+ | End-to-end implementation |
+| Category | Technology | Version | Role |
+|----------|------------|---------|------|
+| **Frontend** | [Streamlit](https://streamlit.io/) | 1.58 | Web UI, progress bar, markdown rendering |
+| **Agent framework** | [LangGraph](https://langchain-ai.github.io/langgraph/) | 1.2 | ReAct agent graph (`create_react_agent`) |
+| **LLM** | [Gemini 2.5 Flash](https://aistudio.google.com/) | — | Reasoning and content generation |
+| **LLM SDK** | `langchain-google-genai` | 4.2 | Gemini ↔ LangChain integration |
+| **Agent core** | `langchain` / `langchain-core` | 1.3 / 1.4 | Message types, runnables, config |
+| **MCP client** | `langchain-mcp-adapters` | 0.2 | `MultiServerMCPClient` |
+| **MCP server** | [FastMCP](https://gofastmcp.com/) | 3.3 | Tool registration, Streamable HTTP |
+| **MCP protocol** | `mcp` | 1.27 | Underlying MCP wire protocol (transitive) |
+| **Video data** | YouTube Data API v3 | — | Authoritative search and metadata |
+| **HTTP client** | `httpx` | 0.28 | Wikipedia REST API (singleton client) |
+| **Reference data** | Wikipedia REST API | — | Supplemental reading links |
+| **Config** | `python-dotenv` | 1.2 | Environment variable loading |
+| **Language** | Python | 3.11+ | End-to-end implementation |
 
 ---
 
@@ -290,28 +306,33 @@ sequenceDiagram
 ```text
 MCP_Learning_path_generator/
 │
-├── app.py                      # Streamlit frontend and progress UX
-├── utils.py                    # Agent setup, MCP client, response extraction
-├── prompt.py                   # Agent system prompt and output schema
-├── requirements.txt            # Application dependencies
+├── app.py                      # Streamlit frontend — progress UX, double-trigger guard
+├── utils.py                    # Agent setup, MCP client, response extraction, timeout
+├── prompt.py                   # SystemMessage prompt — duration rules, anti-hallucination
+├── requirements.txt            # App layer deps (~=X.Y.Z three-component pins)
 ├── .env.example                # Environment variable template
 │
+├── docs/
+│   └── images/                 # Screenshots for README
+│
 └── mcp_server/
-    ├── server.py               # FastMCP entrypoint (streamable-http)
-    ├── tools.py                # search_youtube, find_learning_resources
-    ├── tool_limits.py          # Per-run tool call enforcement
-    └── requirements.txt        # MCP server dependencies
+    ├── server.py               # FastMCP entrypoint (streamable-http transport)
+    ├── tools.py                # search_youtube, find_learning_resources + singletons
+    ├── tool_limits.py          # Per-run tool call enforcement (thread-safe, 30-min TTL)
+    └── requirements.txt        # MCP server deps (~=X.Y.Z three-component pins)
 ```
 
 ---
 
 ## Installation
 
+Two processes are required and run in **separate virtual environments**. The app layer and MCP server have different dependency trees; keeping them separate prevents version conflicts.
+
 ### Prerequisites
 
-- Python 3.10 or later
-- [Google AI Studio API key](https://aistudio.google.com/) (Gemini)
-- [YouTube Data API v3 key](https://console.cloud.google.com/) with YouTube Data API enabled
+- Python 3.11 or later
+- [Google AI Studio API key](https://aistudio.google.com/) (Gemini 2.5 Flash)
+- [YouTube Data API v3 key](https://console.cloud.google.com/) with YouTube Data API v3 enabled
 
 ### 1. Clone the repository
 
@@ -320,32 +341,40 @@ git clone https://github.com/irfanhabeeb-002/MCP_Learning_path_generator.git
 cd MCP_Learning_path_generator
 ```
 
-### 2. Create a virtual environment
+### 2. Set up the Streamlit app environment
 
 ```bash
 python3.11 -m venv venv
-source venv/bin/activate        # macOS / Linux
-# venv\Scripts\activate         # Windows
+source venv/bin/activate          # macOS / Linux
+# venv\Scripts\activate           # Windows
+
+pip install -r requirements.txt
 ```
 
-### 3. Install dependencies
+### 3. Set up the MCP server environment (separate venv)
 
 ```bash
-pip install -r requirements.txt
+python3.11 -m venv mcp_server/.venv
+source mcp_server/.venv/bin/activate   # macOS / Linux
+# mcp_server\.venv\Scripts\activate    # Windows
+
 pip install -r mcp_server/requirements.txt
 ```
+
+> **Why two virtual environments?**  
+> The MCP server uses `fastmcp`, `uvicorn`, and `google-api-python-client` — packages not needed by the Streamlit app. The app uses `streamlit`, `langchain`, and `langgraph` — not needed by the server. Separate envs eliminate cross-dependency conflicts and mirror the production pattern where each process runs in its own container.
 
 ---
 
 ## Configuration
 
-Copy the environment template and add your credentials:
+Copy the environment template and fill in your credentials:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your keys. **Never commit `.env` to version control.**
+Edit `.env`. **Never commit `.env` to version control** — it is in `.gitignore`.
 
 ---
 
@@ -354,38 +383,40 @@ Edit `.env` with your keys. **Never commit `.env` to version control.**
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `GOOGLE_API_KEY` | Yes | — | Google AI Studio key for Gemini 2.5 Flash |
-| `YOUTUBE_API_KEY` | Yes | — | YouTube Data API v3 key (used by MCP server) |
+| `YOUTUBE_API_KEY` | Yes | — | YouTube Data API v3 key (MCP server only) |
 | `MCP_SERVER_URL` | No | `http://127.0.0.1:8001/mcp` | MCP server endpoint for the agent |
 | `MCP_HOST` | No | `127.0.0.1` | MCP server bind host |
 | `MCP_PORT` | No | `8001` | MCP server bind port |
 | `YOUTUBE_MAX_RESULTS` | No | `10` | Max videos per YouTube search (1–50) |
-| `LOG_LEVEL` | No | `INFO` | MCP server log level |
-| `AGENT_TIMEOUT_SECONDS` | No | `300` | Max wall-clock seconds for one agent run |
+| `LOG_LEVEL` | No | `INFO` | MCP server log verbosity |
+| `AGENT_TIMEOUT_SECONDS` | No | `300` | Hard ceiling on agent wall-clock time |
 
 ---
 
 ## Running Locally
 
-Two processes are required: the **MCP server** (tools) and the **Streamlit app** (UI + agent).
-
 ### Terminal 1 — MCP server
 
 ```bash
 cd mcp_server
+source .venv/bin/activate      # macOS / Linux
+# .venv\Scripts\activate       # Windows
+
 python server.py
 ```
 
-Expected endpoint:
+Expected output:
 
 ```text
-http://127.0.0.1:8001/mcp
+INFO: Starting MCP server 'Learning Path Generator MCP'
+INFO: Uvicorn running on http://127.0.0.1:8001
 ```
-
-Set `MCP_PORT=8001` in `.env` or export it if you use a non-default port.
 
 ### Terminal 2 — Streamlit application
 
 ```bash
+# From project root, with venv active
+source venv/bin/activate       # macOS / Linux
 streamlit run app.py
 ```
 
@@ -399,6 +430,22 @@ Open **http://localhost:8501**, enter a learning goal, and click **Generate Lear
 
 ---
 
+## YouTube API Quota
+
+The YouTube Data API v3 free tier grants **10,000 units/day**. Each `search.list` call costs **100 units**.
+
+| Operation | Calls | Units |
+|-----------|-------|-------|
+| `find_learning_resources` | 3 searches | 300 |
+| `search_youtube` (max) | 3 searches | 300 |
+| **Worst case per run** | **6 searches** | **600** |
+| **Free tier budget** | — | **10,000/day** |
+| **Max full runs/day** | **~16** | — |
+
+For a portfolio demo this is fine. For production, add a response cache (Redis or `functools.lru_cache` keyed on sanitized query) to reduce unit spend significantly.
+
+---
+
 ## MCP Server Design
 
 The custom **FastMCP server** is intentionally minimal: two focused tools instead of a sprawling third-party catalog. This keeps latency, quota usage, and agent confusion low.
@@ -406,20 +453,22 @@ The custom **FastMCP server** is intentionally minimal: two focused tools instea
 ### Design principles
 
 1. **Structured JSON responses** — Every tool returns `{ success, tool, ... }` for reliable agent parsing
-2. **Education-biased search** — YouTube queries prefer category 27 (Education) with safe-search enabled
+2. **Education-biased search** — YouTube queries prefer category 27 (Education) with `safeSearch=strict`
 3. **Server-side guardrails** — Tool limits enforced in `tool_limits.py`, not only in prompts
-4. **Separation of concerns** — YouTube credentials stay on the MCP server; Gemini credentials stay in the agent layer
-5. **Streamable HTTP** — Production-aligned transport for remote deployment
+4. **Singleton clients** — YouTube API client and `httpx.Client` built once per process; no per-call discovery fetches
+5. **Separation of concerns** — YouTube credentials stay on the MCP server; Gemini credentials stay in the agent layer
+6. **Streamable HTTP** — Production-aligned transport for remote deployment
 
-### Server startup
+### Tool limit enforcement
 
-```python
-mcp.run(
-    transport="streamable-http",
-    host="127.0.0.1",
-    port=8001,
-    path="/mcp",
-)
+```text
+Agent run starts → UUID generated → sent as X-Agent-Run-Id header
+        │
+        ▼
+Each tool call → tool_limits.py reads header (lowercase normalised by FastMCP)
+        │
+        ├── Within limit → increment counter → execute tool
+        └── Exceeded     → return { success: false, error: "..." } gracefully
 ```
 
 ---
@@ -428,7 +477,7 @@ mcp.run(
 
 ### `find_learning_resources(topic: str)` — max **1** call per run
 
-Performs three angled YouTube searches (beginner, tutorial, advanced), deduplicates results, and optionally attaches a Wikipedia summary.
+Performs three angled YouTube searches (beginner, tutorial, advanced), deduplicates results by `video_id`, and optionally attaches a Wikipedia summary.
 
 **Response shape (simplified):**
 
@@ -473,18 +522,6 @@ Targeted YouTube Data API search for a specific day or topic gap.
 }
 ```
 
-### Tool limit enforcement
-
-```text
-Agent run starts → UUID generated → sent as X-Agent-Run-Id
-        │
-        ▼
-Each tool call → tool_limits.py increments counter
-        │
-        ├── Within limit → execute tool
-        └── Exceeded     → return success: false with graceful message
-```
-
 ---
 
 ## Learning Path Generation Flow
@@ -494,7 +531,7 @@ Each tool call → tool_limits.py increments counter
      │
      ▼
 ┌─────────────┐
-│ 1. PLAN     │  Agent derives N days, topics, objectives (no tools)
+│ 1. PLAN     │  Agent derives exact N days, topics, objectives (no tools)
 └──────┬──────┘
        ▼
 ┌─────────────┐
@@ -502,7 +539,7 @@ Each tool call → tool_limits.py increments counter
 └──────┬──────┘
        ▼
 ┌─────────────┐
-│ 3. SELECT   │  One video per day from JSON tool results
+│ 3. SELECT   │  One video per day from JSON tool results; no invented URLs
 └──────┬──────┘
        ▼
 ┌─────────────┐
@@ -532,38 +569,62 @@ MCP is particularly valuable for **agentic AI** systems where the set of capabil
 
 ---
 
+## Dependency Strategy
+
+Dependencies are pinned with **`~=X.Y.Z` (three-component compatible release)** — the right balance for a public portfolio project:
+
+| Operator | Semantics | Verdict for this project |
+|----------|-----------|--------------------------|
+| `>=X.Y` | Floor only; pip can pull any future version | ❌ Too loose — a future LangChain minor can break everything |
+| `==X.Y.Z` | Exact pin; nothing deviates | ⚠️ Too brittle — requires a lockfile workflow (pip-tools/poetry) and stales fast |
+| `~=X.Y` | `>=X.Y, ==X.*` — allows **minor** bumps | ❌ Wrong for this ecosystem — minor bumps regularly break APIs |
+| `~=X.Y.Z` | `>=X.Y.Z, ==X.Y.*` — allows **patch** bumps only | ✅ Correct — patches are safe; minor/major changes are blocked |
+| lockfile | Full transitive tree pinned | ✅ Best for CI/production — overkill for a portfolio clone-and-run |
+
+The most common mistake (present in many portfolio projects) is using `~=X.Y` and commenting that it "blocks minor version changes" — it does **not**. PEP 440 is explicit: `~=V.N` is `>=V.N, ==V.*`.
+
+---
+
 ## Technical Highlights
 
-- **LangGraph `create_react_agent`** with `recursion_limit=25` — enough for ~4 tool rounds without runaway loops
-- **`asyncio.wait_for` timeout** — `AGENT_TIMEOUT_SECONDS` (default 300s) caps wall-clock agent time and prevents silent quota burn
-- **`extract_final_learning_path()`** — Reverse-walks message history; skips tool JSON and tool-call-only steps
+- **`create_react_agent(prompt=SystemMessage(...))`** — System instructions injected into the system-role slot for reliable constraint-following, not appended to the human message
+- **`asyncio.wait_for` timeout** — `AGENT_TIMEOUT_SECONDS` (default 300s) caps wall-clock agent time; displayed in the UI so users know the expected wait
+- **`st.rerun()` double-trigger guard** — Goal stashed in `pending_goal` session state; `is_generating=True` + `st.rerun()` forces a re-render with the button disabled before the blocking call starts
+- **Section header fix** — `prev_section` captured before `st.session_state.last_section` is overwritten; was always `False` before
+- **YouTube client singleton** — `build()` called once per process; eliminates up to 5 extra discovery-document fetches per generation run
+- **`httpx.Client` singleton** — TCP connection pool reused across Wikipedia calls; timeout reduced 10s → 5s
+- **`extract_final_learning_path()`** — Reverse-walks message history; skips tool JSON and tool-call-only steps to return only the final markdown
 - **`ConfigurationError`** — Fails fast when `.env` is incomplete; no silent partial setup
-- **Per-run UUID correlation** — `X-Agent-Run-Id` header links agent session to MCP rate limits
-- **Thread-safe in-memory limiter** — 30-minute TTL on run counters; suitable for single-instance deploys
+- **Per-run UUID correlation** — `X-Agent-Run-Id` header links agent session to MCP rate limits; FastMCP normalises to lowercase — only lowercase form is valid in `tool_limits.py`
+- **Thread-safe in-memory limiter** — 30-minute TTL on run counters; `threading.Lock` for correctness under concurrent requests
 - **No credentials in Streamlit UI** — Portfolio-ready security posture for demos and interviews
 
 ---
 
 ## Future Roadmap
 
-- [ ] **Deploy MCP server** to cloud (Cloud Run, Fly.io, Railway) with HTTPS and API key auth
+- [ ] **Deploy MCP server** to cloud (Cloud Run, Fly.io, Railway) with HTTPS and API key authentication
+- [ ] **Response caching** — Redis cache keyed on sanitized YouTube queries to reduce quota spend below 100 units/run
 - [ ] **Playlist and export** — Generate YouTube playlists or downloadable PDF/Markdown exports
 - [ ] **Persistent storage** — Save and revisit past learning paths (SQLite / Postgres)
 - [ ] **Additional MCP tools** — Google Drive export, Notion pages, flashcard generation
-- [ ] **Structured output mode** — Gemini JSON schema for stricter markdown validation
-- [ ] **Redis-backed rate limits** — Multi-instance MCP server support
-- [ ] **CI pipeline** — Lint, type-check, and integration tests against mocked YouTube responses
-- [ ] **Screenshot gallery** — Add `docs/images/` for README and portfolio polish
+- [ ] **Structured output mode** — Gemini JSON schema for stricter markdown section validation
+- [ ] **Redis-backed rate limits** — Replace in-memory `ToolCallLimiter` for multi-instance MCP server deployments
+- [ ] **CI pipeline** — Lint, type-check (`mypy --strict`), and integration tests against mocked YouTube responses
+- [ ] **Async cancel** — Background thread + `threading.Event` for true mid-run cancellation in Streamlit
 
 ---
 
 ## Lessons Learned
 
-1. **Prompts alone do not control agent cost** — Server-side tool limits are essential for production behavior.
-2. **MCP decoupling pays off early** — Even two tools benefit from a separate FastMCP process and Streamable HTTP transport.
-3. **Response extraction matters** — ReAct agents emit tool messages and intermediate reasoning; the UI must filter to final markdown only.
-4. **Structured JSON tool outputs** — Agents parse `{ success, videos, ... }` more reliably than raw API payloads.
-5. **Environment-based config** — Removing API keys from the UI improves security and simplifies Streamlit Cloud deployment via secrets.
+1. **Prompts alone do not control agent cost** — Server-side tool limits in `tool_limits.py` are essential; a prompt can be ignored, a 403-equivalent JSON response cannot.
+2. **MCP decoupling pays off early** — Even two tools benefit from a separate FastMCP process; credentials, rate limits, and API details stay server-side.
+3. **System prompt slot matters** — Instructions in the human turn are treated as suggestions; `create_react_agent(prompt=SystemMessage(...))` injects them as hard constraints.
+4. **`~=X.Y` is not what most people think** — The two-component form allows minor version bumps. `~=X.Y.Z` is the correct form for ecosystem stability.
+5. **FastMCP normalises headers to lowercase** — `headers.get("X-Agent-Run-Id")` always returns `None`; only `headers.get("x-agent-run-id")` works. Source inspection is faster than debugging.
+6. **Streamlit's render model blocks you** — `st.rerun()` is the only way to update the UI before a long synchronous call; session state is the only way to pass data across the rerun boundary.
+7. **Singletons beat context managers for long-lived servers** — `_get_youtube_client()` and a module-level `httpx.Client` eliminate per-call setup overhead across the process lifetime.
+8. **`st.session_state.last_section = section` before `if section != st.session_state.last_section`** is always `False` — read before write.
 
 ---
 
@@ -573,8 +634,9 @@ Contributions are welcome. Please open an issue or pull request on [GitHub](http
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Commit your changes
-4. Push and open a Pull Request
+3. Install both dependency sets (see Installation above)
+4. Make your changes with tests where applicable
+5. Push and open a Pull Request
 
 ---
 

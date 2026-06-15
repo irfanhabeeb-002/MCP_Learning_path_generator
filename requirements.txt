@@ -1,10 +1,28 @@
 # Streamlit app + LangGraph agent
-# Pinned with ~= (compatible release) to the versions verified working on 2026-06-14.
-# ~=X.Y allows patch updates (X.Y.Z) but blocks minor/major version changes that
-# commonly introduce breaking API changes in the LangChain ecosystem.
-langchain~=1.3
-langgraph~=1.2
-langchain-mcp-adapters~=0.2
-langchain-google-genai~=4.2
-streamlit~=1.58
-python-dotenv~=1.2
+# Python 3.11+ required.
+#
+# Pinning strategy: ~=X.Y.Z (three-component compatible release, per PEP 440).
+#
+#   ~=X.Y.Z  is equivalent to  >= X.Y.Z, == X.Y.*
+#   → allows patch-level updates (security fixes, bug fixes)
+#   → blocks minor and major version bumps that regularly break APIs
+#
+# Why NOT == (exact pin)?
+#   Exact pins require a lockfile workflow (pip-tools / poetry) and go stale fast.
+#   For a public portfolio project that people git-clone and pip-install once,
+#   ~=X.Y.Z is the right balance: reproducible enough, not brittle.
+#
+# Why NOT ~=X.Y (two-component)?
+#   ~=X.Y == >= X.Y, == X.* — this ALLOWS minor version bumps (e.g. 1.3→1.4).
+#   In the LangChain ecosystem, minor bumps routinely introduce breaking changes.
+#   Two-component pins are under-constrained for this project.
+#
+# Versions verified working: 2026-06-15
+# Run `pip freeze` in the project venv to see the full transitive dependency tree.
+
+langchain~=1.3.6
+langgraph~=1.2.4
+langchain-mcp-adapters~=0.2.2
+langchain-google-genai~=4.2.5
+streamlit~=1.58.0
+python-dotenv~=1.2.2
