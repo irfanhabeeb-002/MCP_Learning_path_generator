@@ -1,0 +1,49 @@
+# ── Dockerfile.streamlit ──────────────────────────────────────────────────────
+# Builds the Streamlit + LangGraph agent layer.
+#
+# What lives here:
+#   app.py        — Streamlit UI and session state management
+#   utils.py      — LangGraph agent, MCP client, async pipeline
+#   prompt.py     — SystemMessage and backwards-compat alias
+#
+# What does NOT live here:
+#   mcp_server/   — separate image (Dockerfile.mcp)
+#   venv/         — pip installs fresh from requirements.txt
+#   tests/        — never needed in a production image
+#
+# Build context: project root (docker-compose sets context: .)
+# ──────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.11-slim
+
+# Create a non-root working directory; all subsequent COPY/RUN use this path.
+WORKDIR /app
+
+# ── Layer caching strategy ────────────────────────────────────────────────────
+# Copy requirements BEFORE source code.
+# Docker rebuilds a layer only when its inputs change.
+# Requirements change far less often than source → pip layer is almost always
+# served from cache, making iterative builds fast.
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ── Application source ────────────────────────────────────────────────────────
+# Copy only the three files this container actually needs.
+# mcp_server/, tests/, docs/ are intentionally excluded.
+COPY app.py utils.py prompt.py ./
+
+# ── Network ───────────────────────────────────────────────────────────────────
+# Document the port; docker-compose publishes it to the host.
+EXPOSE 8501
+
+# ── Startup ───────────────────────────────────────────────────────────────────
+# --server.address=0.0.0.0  REQUIRED: Streamlit defaults to localhost,
+#                           which is unreachable from outside the container.
+# --server.enableCORS=false disables CORS checks that can block the browser
+#                           preview when accessed through Docker port forwarding.
+CMD ["streamlit", "run", "app.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.enableCORS=false", \
+     "--server.enableXsrfProtection=false"]

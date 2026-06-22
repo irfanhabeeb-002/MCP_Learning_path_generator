@@ -1,0 +1,65 @@
+# ── .dockerignore ─────────────────────────────────────────────────────────────
+# Excludes files from the Docker build context sent to the daemon.
+#
+# Why this matters:
+#   Without .dockerignore, every `docker build` sends the entire project
+#   directory to the daemon — including venv/ (~500 MB), .git/, and .env.
+#   That makes builds slow and risks accidentally embedding secrets or
+#   redundant files into the image.
+#
+# Rule: exclude everything that is NOT explicitly COPY-ed in a Dockerfile.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+# These are large (~200–500 MB each) and are always rebuilt fresh inside the
+# image by `pip install -r requirements.txt`.
+venv/
+mcp_server/.venv/
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# NEVER bake API keys into a Docker image.
+# docker-compose injects these at runtime via `env_file: .env`.
+.env
+.env.local
+.env.*.local
+
+# ── Python bytecode ───────────────────────────────────────────────────────────
+# Generated at runtime; never ship pre-compiled .pyc files from the host
+# because they encode the host's Python path, making them invalid in the image.
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── Test infrastructure ───────────────────────────────────────────────────────
+# Tests are run on the host against the venv, not inside containers.
+tests/
+mcp_server/tests/
+.pytest_cache/
+mcp_server/.pytest_cache/
+pytest.ini
+mcp_server/pytest.ini
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+# .git/ can be hundreds of MB for active repos; not needed in images.
+.git/
+.gitignore
+
+# ── Documentation and assets ─────────────────────────────────────────────────
+docs/
+README.md
+*.md
+
+# ── Editor / OS artifacts ─────────────────────────────────────────────────────
+.vscode/
+.devcontainer/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ── Docker files ──────────────────────────────────────────────────────────────
+# The Dockerfiles and compose file themselves don't need to be inside the image.
+Dockerfile.streamlit
+Dockerfile.mcp
+docker-compose.yml
+.dockerignore

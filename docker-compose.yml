@@ -1,0 +1,113 @@
+# ── docker-compose.yml ────────────────────────────────────────────────────────
+# Orchestrates the two-service architecture:
+#
+#   mcp-server  → FastMCP API (port 8001, internal only)
+#   streamlit   → Streamlit UI + LangGraph agent (port 8501, exposed to host)
+#
+# Network topology:
+#   Both services share a bridge network named "app-net".
+#   Docker's embedded DNS resolves the service name "mcp-server" to the
+#   MCP container's IP, so MCP_SERVER_URL=http://mcp-server:8001/mcp works.
+#
+# Startup order:
+#   mcp-server starts first and must pass its healthcheck before streamlit
+#   starts. This eliminates the race condition where Streamlit's first agent
+#   run fails with "Connection refused" on a cold boot.
+#
+# Secrets / environment:
+#   Both services load your .env file (GOOGLE_API_KEY, YOUTUBE_API_KEY, etc.)
+#   The inline "environment:" blocks take precedence over .env values, which
+#   lets us override the localhost URLs with Docker-internal hostnames without
+#   changing your .env file.
+#
+# Usage:
+#   docker compose up --build         # build images and start in foreground
+#   docker compose up -d --build      # build images and start detached
+#   docker compose logs -f            # follow logs from both services
+#   docker compose ps                 # show running containers and ports
+#   docker compose down               # stop and remove containers + network
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── MCP server ──────────────────────────────────────────────────────────────
+  mcp-server:
+    build:
+      context: .                   # build context = project root
+      dockerfile: Dockerfile.mcp
+    image: mcp-learningpath-mcp:latest
+
+    # Inject secrets from .env (YOUTUBE_API_KEY, etc.)
+    env_file: .env
+
+    # Override or set runtime variables.
+    # These values take precedence over anything in .env.
+    environment:
+      MCP_HOST: "0.0.0.0"          # bind on all interfaces (required for Docker)
+      MCP_PORT: "8001"
+      MCP_PATH: "/mcp"
+
+    # Port 8001 is intentionally NOT published to the host.
+    # Only the streamlit container (on app-net) needs to reach it.
+    # Remove this comment block and add the following if you want to
+    # curl-test the MCP endpoint directly from your host machine:
+    #   ports:
+    #     - "8001:8001"
+
+    networks:
+      - app-net
+
+    restart: unless-stopped
+
+    # ── Healthcheck ───────────────────────────────────────────────────────────
+    # Uses Python stdlib (socket module) — no curl, no wget, no extra packages.
+    # Checks that port 8001 is accepting TCP connections.
+    # This is more reliable than an HTTP GET to /mcp because the FastMCP
+    # streamable-HTTP transport uses SSE for GET requests (the connection
+    # stays open), which would cause urllib.request.urlopen to hang.
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import socket; s = socket.create_connection(('localhost', 8001), timeout=5); s.close()"
+      interval: 10s      # check every 10 seconds
+      timeout: 5s        # fail if no response within 5 seconds
+      retries: 5         # mark unhealthy after 5 consecutive failures
+      start_period: 15s  # give FastMCP time to finish startup before checking
+
+  # ── Streamlit ────────────────────────────────────────────────────────────────
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    image: mcp-learningpath-streamlit:latest
+
+    # Inject secrets from .env (GOOGLE_API_KEY, etc.)
+    env_file: .env
+
+    environment:
+      # Override the localhost URL that .env may contain.
+      # "mcp-server" resolves to the MCP container via Docker's DNS on app-net.
+      MCP_SERVER_URL: "http://mcp-server:8001/mcp"
+
+    ports:
+      - "8501:8501"      # only this port is published to the host
+
+    networks:
+      - app-net
+
+    # Wait until mcp-server passes its healthcheck before starting.
+    # Prevents "Connection refused" errors on cold boot.
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+# ── Shared internal bridge network ────────────────────────────────────────────
+# Docker creates this automatically. Both containers get DNS entries on it.
+# "mcp-server" resolves to the MCP container's internal IP.
+networks:
+  app-net:
+    driver: bridge

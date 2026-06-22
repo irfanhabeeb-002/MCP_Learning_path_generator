@@ -1,0 +1,53 @@
+# ── Dockerfile.mcp ────────────────────────────────────────────────────────────
+# Builds the FastMCP API server layer.
+#
+# What lives here:
+#   server.py     — FastMCP app, transport config, __main__ entry
+#   tools.py      — search_youtube + find_learning_resources tool implementations
+#   tool_limits.py — per-run call limiter (ToolCallLimiter, enforce_tool_limit)
+#
+# What does NOT live here:
+#   app.py / utils.py — Streamlit layer (Dockerfile.streamlit)
+#   mcp_server/.venv/ — pip installs fresh from requirements.txt
+#   tests/            — never needed in a production image
+#
+# Build context: project root (docker-compose sets context: .)
+# ──────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# ── Layer caching strategy ────────────────────────────────────────────────────
+# requirements.txt is copied from mcp_server/ subfolder.
+# The COPY source path is relative to the build context (project root).
+COPY mcp_server/requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ── Application source ────────────────────────────────────────────────────────
+# Copies all three server files into /app, flattened (no mcp_server/ subdir).
+# server.py imports tools and tool_limits by name, so all three must be in
+# the same directory — which /app provides.
+COPY mcp_server/server.py mcp_server/tools.py mcp_server/tool_limits.py ./
+
+# ── Network ───────────────────────────────────────────────────────────────────
+EXPOSE 8001
+
+# ── MCP_HOST default for Docker ───────────────────────────────────────────────
+# Locally server.py defaults MCP_HOST to 127.0.0.1, which is only reachable
+# within the same container. Docker containers have isolated loopbacks, so the
+# Streamlit container cannot reach 127.0.0.1 on this container.
+#
+# Setting MCP_HOST=0.0.0.0 makes the server bind on ALL interfaces so Docker's
+# internal bridge network can route traffic from the streamlit container.
+#
+# This is an image-level default — overridable via docker-compose or -e flag.
+# No application logic changes are required; server.py already reads MCP_HOST
+# from the environment with os.getenv("MCP_HOST", "127.0.0.1").
+ENV MCP_HOST=0.0.0.0
+
+# ── Startup ───────────────────────────────────────────────────────────────────
+# server.py reads MCP_HOST / MCP_PORT / MCP_PATH from the environment.
+# All three are injected by docker-compose; defaults are safe fallbacks.
+CMD ["python", "server.py"]
