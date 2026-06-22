@@ -33,3 +33,8 @@ Thumbs.db
 .vscode/settings.json
 .idea/
 *.swp
+
+.pytest_cache/
+mcp_server/.pytest_cache/
+.coverage
+htmlcov/
