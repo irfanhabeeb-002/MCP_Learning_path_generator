@@ -1,0 +1,83 @@
+name: CI Pipeline
+
+# Trigger the workflow on push or pull requests targeting the master branch
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+# Concurrency group configuration to cancel any in-progress runs when a new push is made
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Job 1: Run unit tests for Streamlit UI and LangGraph agent
+  test-streamlit:
+    name: Streamlit & Agent Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Streamlit Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Testing Dependencies
+        run: |
+          pip install pytest pytest-asyncio pytest-mock
+
+      - name: Run Streamlit Tests
+        run: pytest tests/ -v
+
+  # Job 2: Run unit tests for the MCP Server
+  test-mcp:
+    name: MCP Server Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "mcp_server/requirements.txt"
+
+      - name: Install MCP Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r mcp_server/requirements.txt
+
+      - name: Install Testing Dependencies
+        run: |
+          pip install pytest pytest-asyncio pytest-mock
+
+      - name: Run MCP Server Tests
+        run: pytest mcp_server/tests/ -v
+
+  # Job 3: Verify the Docker Compose configuration builds successfully
+  docker-build:
+    name: Docker Build Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Copy Env Example
+        run: cp .env.example .env
+
+      - name: Build Docker Images
+        run: docker compose build
