@@ -430,6 +430,37 @@ Open **http://localhost:8501**, enter a learning goal, and click **Generate Lear
 
 ---
 
+## Docker
+
+The project uses a multi-container architecture:
+
+- Streamlit container
+- FastMCP server container
+
+Both services communicate over an internal Docker bridge network.
+
+### Build and run
+
+```bash
+docker compose up --build
+```
+
+### Detached mode
+
+```bash
+docker compose up -d
+```
+
+### Stop
+
+```bash
+docker compose down
+```
+
+Docker preserves the same two-process architecture used during development.
+
+---
+
 ## YouTube API Quota
 
 The YouTube Data API v3 free tier grants **10,000 units/day**. Each `search.list` call costs **100 units**.
@@ -569,22 +600,6 @@ MCP is particularly valuable for **agentic AI** systems where the set of capabil
 
 ---
 
-## Dependency Strategy
-
-Dependencies are pinned with **`~=X.Y.Z` (three-component compatible release)** — the right balance for a public portfolio project:
-
-| Operator | Semantics | Verdict for this project |
-|----------|-----------|--------------------------|
-| `>=X.Y` | Floor only; pip can pull any future version | ❌ Too loose — a future LangChain minor can break everything |
-| `==X.Y.Z` | Exact pin; nothing deviates | ⚠️ Too brittle — requires a lockfile workflow (pip-tools/poetry) and stales fast |
-| `~=X.Y` | `>=X.Y, ==X.*` — allows **minor** bumps | ❌ Wrong for this ecosystem — minor bumps regularly break APIs |
-| `~=X.Y.Z` | `>=X.Y.Z, ==X.Y.*` — allows **patch** bumps only | ✅ Correct — patches are safe; minor/major changes are blocked |
-| lockfile | Full transitive tree pinned | ✅ Best for CI/production — overkill for a portfolio clone-and-run |
-
-The most common mistake (present in many portfolio projects) is using `~=X.Y` and commenting that it "blocks minor version changes" — it does **not**. PEP 440 is explicit: `~=V.N` is `>=V.N, ==V.*`.
-
----
-
 ## Technical Highlights
 
 - **`create_react_agent(prompt=SystemMessage(...))`** — System instructions injected into the system-role slot for reliable constraint-following, not appended to the human message
@@ -598,6 +613,34 @@ The most common mistake (present in many portfolio projects) is using `~=X.Y` an
 - **Per-run UUID correlation** — `X-Agent-Run-Id` header links agent session to MCP rate limits; FastMCP normalises to lowercase — only lowercase form is valid in `tool_limits.py`
 - **Thread-safe in-memory limiter** — 30-minute TTL on run counters; `threading.Lock` for correctness under concurrent requests
 - **No credentials in Streamlit UI** — Portfolio-ready security posture for demos and interviews
+
+---
+
+## Testing
+
+The project includes automated unit tests for both the Streamlit application layer and the MCP server.
+
+### Main application
+
+```bash
+pytest tests/
+```
+
+### MCP server
+
+```bash
+pytest mcp_server/tests/
+```
+
+### Coverage
+
+- **52 unit tests**
+- **No real API calls** during tests
+- External services mocked using `pytest-mock` and `monkeypatch`
+- Environment-variable testing
+- Tool limiter and response sanitization tests
+
+Test execution completes in under 2 seconds.
 
 ---
 
@@ -615,16 +658,29 @@ The most common mistake (present in many portfolio projects) is using `~=X.Y` an
 
 ---
 
-## Lessons Learned
+## CI/CD
 
-1. **Prompts alone do not control agent cost** — Server-side tool limits in `tool_limits.py` are essential; a prompt can be ignored, a 403-equivalent JSON response cannot.
-2. **MCP decoupling pays off early** — Even two tools benefit from a separate FastMCP process; credentials, rate limits, and API details stay server-side.
-3. **System prompt slot matters** — Instructions in the human turn are treated as suggestions; `create_react_agent(prompt=SystemMessage(...))` injects them as hard constraints.
-4. **`~=X.Y` is not what most people think** — The two-component form allows minor version bumps. `~=X.Y.Z` is the correct form for ecosystem stability.
-5. **FastMCP normalises headers to lowercase** — `headers.get("X-Agent-Run-Id")` always returns `None`; only `headers.get("x-agent-run-id")` works. Source inspection is faster than debugging.
-6. **Streamlit's render model blocks you** — `st.rerun()` is the only way to update the UI before a long synchronous call; session state is the only way to pass data across the rerun boundary.
-7. **Singletons beat context managers for long-lived servers** — `_get_youtube_client()` and a module-level `httpx.Client` eliminate per-call setup overhead across the process lifetime.
-8. **`st.session_state.last_section = section` before `if section != st.session_state.last_section`** is always `False` — read before write.
+GitHub Actions automatically runs:
+
+1. Main pytest suite
+2. MCP server pytest suite
+3. Docker image builds
+
+Every push and pull request is validated before deployment.
+
+Streamlit Cloud provides automatic deployment after successful pushes.
+
+### DevOps diagram
+
+```mermaid
+flowchart TD
+    A[Push to GitHub] --> B[GitHub Actions]
+    B --> C[Main pytest suite]
+    B --> D[MCP pytest suite]
+    C --> E[Docker build]
+    D --> E
+    E --> F[Streamlit Cloud Deployment]
+```
 
 ---
 
